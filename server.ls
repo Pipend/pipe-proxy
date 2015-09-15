@@ -1,5 +1,6 @@
 {find, filter, map, minimum, any, concat-map, unique, id} = require \prelude-ls
 {bindP, from-error-value-callback, new-promise, returnP, rejectP, to-callback, with-cancel-and-dispose} = require \./async-ls
+{http-port} = require \./config
 
 http = require \http
 proxy = require \http-proxy .createProxyServer!
@@ -24,14 +25,6 @@ proxy.on \proxyReq (proxyReq, req, res, options) ->
 
 
 {start-container-single} = require \./control.ls
-
-# go = (container, req, res) ->
-#     console.log "container", container
-#     [{IP, PublicPort}] = container.Ports
-#     proxy.web do 
-#         req
-#         res
-#         {target: "http://#{IP}:#{PublicPort}/"}
 
 express = require \express
 app = express!
@@ -74,7 +67,9 @@ app = express!
                     {target: "http://192.168.99.100:#{port}/"}
             # next!
 
-app.listen 8000
+app.listen http-port
+
+console.log "listening for connections on port: #{http-port}"
 
 return
 

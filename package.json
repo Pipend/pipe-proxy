@@ -2,7 +2,7 @@
   "name": "pipe-proxy",
   "version": "0.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.ls",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -16,5 +16,9 @@
     "express": "^4.13.3",
     "http-proxy": "^1.11.2",
     "prelude-ls": "^1.1.2"
+  },
+  "devDependencies": {
+    "gulp": "^3.9.0",
+    "gulp-livescript": "^2.3.0"
   }
 }
