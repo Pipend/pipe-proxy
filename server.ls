@@ -70,20 +70,3 @@ app = express!
 app.listen http-port
 
 console.log "listening for connections on port: #{http-port}"
-
-return
-
-
-
-http.createServer (req, res) ->
-
-    console.log req.headers
-    #req.headers.host = 'pages.mli.me'
-
-    proxy.web do 
-        req
-        res
-        {target: "http://192.168.99.100:4082/"}
-
-
-.listen 8000
