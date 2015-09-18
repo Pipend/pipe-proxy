@@ -15,7 +15,8 @@
     "dockerode": "^2.2.2",
     "express": "^4.13.3",
     "http-proxy": "^1.11.2",
-    "prelude-ls": "^1.1.2"
+    "prelude-ls": "^1.1.2",
+    "shelljs": "^0.5.3"
   },
   "devDependencies": {
     "gulp": "^3.9.0",

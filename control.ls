@@ -44,6 +44,7 @@ get-container-info = (username, options = {all: true}) ->
 find-container-info = (containers, username) ->
     containers |> find (-> "/#{username}" in (it.Names |> map (.split "_p_" .0)))
 
+# wait-for-stream :: Container -> Promise ()
 wait-for-stream = (container) ->
 
     stream <- bindP (from-error-value-callback container.attach, container) {stream: true, stdout: true, stderr: true}
@@ -69,7 +70,7 @@ wait-for-stream = (container) ->
     cleanup!
     rej Error "Running a container timedout\nOutput:\n#{output}"
 
-# String -> Promise {container :: Container, port: Int16}
+# start-container :: String -> Promise ContainerData :: {state :: String, container :: Container, container-info, port: Int16}
 start-container = (username) ->
 
     containers <- bindP (get-containers {all: true})
@@ -116,6 +117,7 @@ controller = do ->
     promises = {}
     retries = {}
 
+    # restart :: String -> Promise ContainerData
     restart: (username) ->
         delete promises[username]
         retries[username] = (retries[username] ? 0) + 1
@@ -125,6 +127,7 @@ controller = do ->
         else 
             @start username
 
+    # start :: String -> ContainerData
     start: (username) ->
 
         if !!promises[username]

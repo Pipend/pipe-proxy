@@ -13,31 +13,56 @@ http = require \http
 proxy = require \http-proxy .createProxyServer!
 controller = require \./control.ls
 {http-port} = require \./config
+{exec} = require \shelljs
+
+err, machine-ip <- exec 'docker-machine ip default'
+return console.error err if !!err
+machine-ip := machine-ip.trim!
 
 
-proxy.on \error, (e, req, res) ->
-    console.log \error, e, e.code
-    username = req.cookies["username"]
-    if 'ECONNREFUSED' == e.code
-        do-proxy (controller.restart username), req, res
-    else
-        res.end e.to-string!
+do ->
+    # handling proxy errors
+    retries = {}
+
+    proxy.on \error, (e, req, res) ->
+        console.error e
+
+        username = req.cookies["username"]
+
+        if !retries[username]
+            retries[username] = 1
+            set-timeout do 
+                ->
+                    delete retries[username]
+                20000 # 20 seconds
+        else
+            retries[username] += 1
+
+        if retries[username] > 2
+            res.status 500 .end "Maximum number of retries exhausted in proxying to #{username} (#{retries[username]})"
+        else
+            if 'ECONNREFUSED' == e.code
+                <- set-timeout _, 500
+                do-proxy (controller.restart username), req, res
+            else
+                res.status 500 .end e.to-string!
+
 
 proxy.on \proxyReq (proxyReq, req, res, options) ->
-    proxyReq.set-header 'host', '192.168.99.100'
+    proxyReq.set-header 'host', "#{machine-ip}"
 
 
 # do-proxy :: Promise ContainerData -> Request -> Response -> ()
 do-proxy = (promise, req, res) ->
     err, {state, container, container-info, port}? <- to-callback promise
     if err 
-        console.log err
+        console.error err
         res.end err.to-string!
     else
         proxy.web do 
             req
             res
-            {target: "http://192.168.99.100:#{port}/"}
+            {target: "http://#{machine-ip}:#{port}/"}
 
 express = require \express
 app = express!
