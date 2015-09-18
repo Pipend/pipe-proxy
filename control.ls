@@ -1,5 +1,6 @@
 {find, filter, map, minimum, any, concat-map, unique, id} = require \prelude-ls
 {bindP, from-error-value-callback, new-promise, returnP, rejectP, to-callback, with-cancel-and-dispose} = require \./async-ls
+{exec} = require \shelljs
 Docker = require \dockerode
 read = (file) -> (require \fs).readFileSync "/Users/homam/.docker/machine/certs/#{file}"
 docker = new Docker({host: "192.168.99.100", protocol: \https, port: 2376, ca: (read "ca.pem"), cert: (read "cert.pem"), key: (read "key.pem") })
@@ -70,6 +71,18 @@ wait-for-stream = (container) ->
     cleanup!
     rej Error "Running a container timedout\nOutput:\n#{output}"
 
+make-stopper = (username, container-info) -> ->
+    resolve, reject <- new-promise
+    console.log "really stopping #{username} - #{container-info.Id}"
+    container = docker.getContainer container-info.Id
+    err, res <- container.stop
+    if !!err
+        console.log err
+        reject err
+    else
+        console.log res
+        resolve "stopped #{username} - #{container-info.Id}"
+
 # start-container :: String -> Promise ContainerData :: {state :: String, container :: Container, container-info, port: Int16}
 start-container = (username) ->
 
@@ -82,7 +95,7 @@ start-container = (username) ->
         if is-container-up container-info
             # existing running container
             console.log "> existing #{username}"
-            return returnP {state: "running", container, container-info, port: get-public-port container-info}
+            return returnP {state: "running", container, container-info, port: (get-public-port container-info), stopper: (make-stopper username, container-info)}
         else
             # resume a container
             console.log "> resuming #{username}"
@@ -90,7 +103,7 @@ start-container = (username) ->
             container <- bindP (resume-container container)
             container-info <- bindP (get-container-info username)
             _ <- bindP (wait-for-stream container)
-            return returnP {state: "started", container, container-info, port: get-public-port container-info}
+            return returnP {state: "started", container, container-info, port: (get-public-port container-info), stopper: (make-stopper username, container-info)}
 
     else
         # run a new container from an image
@@ -109,7 +122,7 @@ start-container = (username) ->
         container-info <- bindP (get-container-info username)
         _ <- bindP (wait-for-stream container)
 
-        returnP {state: "created", container, container-info, port: free-port}
+        returnP {state: "created", container, container-info, port: free-port, stopper: (make-stopper username, container-info)}
 
 
 controller = do ->

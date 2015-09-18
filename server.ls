@@ -12,7 +12,7 @@
 http = require \http
 proxy = require \http-proxy .createProxyServer!
 controller = require \./control.ls
-{http-port} = require \./config
+{http-port, sleep-container-after} = require \./config
 {exec} = require \shelljs
 
 err, machine-ip <- exec 'docker-machine ip default'
@@ -43,7 +43,7 @@ do ->
         else
             if 'ECONNREFUSED' == e.code
                 <- set-timeout _, 500
-                do-proxy (controller.restart username), req, res
+                do-proxy username, (controller.restart username), req, res
             else
                 res.status 500 .end e.to-string!
 
@@ -51,14 +51,39 @@ do ->
 proxy.on \proxyReq (proxyReq, req, res, options) ->
     proxyReq.set-header 'host', "#{machine-ip}"
 
+accessed = do ->
+    containers = {}
+
+    cleanup = ->
+        old = new Date!.value-of! - sleep-container-after
+        [stopper! for username, {last-access, stopper} of containers when last-access < old]
+        |> map (p) ->
+            p.then ->
+                console.log it
+            p.catch ->
+                console.error it
+        set-timeout cleanup, 5000
+
+    cleanup!
+
+    (username, stopper) ->
+        containers[username] = {
+            last-access: new Date!.value-of!
+            stopper: ->
+                delete containers[username]
+                console.log "stopping #{username}"
+                stopper!
+        }
+
 
 # do-proxy :: Promise ContainerData -> Request -> Response -> ()
-do-proxy = (promise, req, res) ->
-    err, {state, container, container-info, port}? <- to-callback promise
+do-proxy = (username, promise, req, res) ->
+    err, {state, container, container-info, port, stopper}? <- to-callback promise
     if err 
         console.error err
         res.end err.to-string!
     else
+        accessed username, stopper
         proxy.web do 
             req
             res
@@ -82,7 +107,7 @@ app = express!
         if !username
             res.redirect "/login"
         else
-            do-proxy (controller.start username), req, res
+            do-proxy username, (controller.start username), req, res
 
 app.listen http-port
 
