@@ -44,6 +44,31 @@ get-container-info = (username, options = {all: true}) ->
 find-container-info = (containers, username) ->
     containers |> find (-> "/#{username}" in (it.Names |> map (.split "_p_" .0)))
 
+wait-for-stream = (container) ->
+
+    stream <- bindP (from-error-value-callback container.attach, container) {stream: true, stdout: true, stderr: true}
+        
+    res, rej <- new-promise
+    cleanup = do ->
+        resolved = false
+        ->
+            return if resolved
+            resolved := true
+            stream.removeListener \data, shandler
+    output = ""
+    shandler = (d) ->
+        s = d.to-string!
+        output += s
+        if (s.index-of 'listening for connections on port: 4081') > -1
+            cleanup!
+            res null
+    
+    stream.on \data, shandler
+
+    <- set-timeout _, 20000 # 20 seconds
+    cleanup!
+    rej Error "Running a container timedout\nOutput:\n#{output}"
+
 # String -> Promise {container :: Container, port: Int16}
 start-container = (username) ->
 
@@ -55,14 +80,20 @@ start-container = (username) ->
         container = docker.getContainer container-info.Id
         if is-container-up container-info
             # existing running container
+            console.log "> existing #{username}"
             return returnP {state: "running", container, container-info, port: get-public-port container-info}
         else
+            # resume a container
+            console.log "> resuming #{username}"
             container.PortBindings = "4081/tcp": [{HostPort: "#{free-port}"}]
             container <- bindP (resume-container container)
             container-info <- bindP (get-container-info username)
+            _ <- bindP (wait-for-stream container)
             return returnP {state: "started", container, container-info, port: get-public-port container-info}
 
     else
+        # run a new container from an image
+        console.log "> creating #{username}"
         free-port = find-a-free-port containers
 
         container <- bindP (from-error-value-callback docker.createContainer, docker) {
@@ -75,44 +106,42 @@ start-container = (username) ->
 
         container <- bindP resume-container container
         container-info <- bindP (get-container-info username)
+        _ <- bindP (wait-for-stream container)
+
         returnP {state: "created", container, container-info, port: free-port}
 
 
-    # err, stream <- container.attach {stream: true, stdout: true, stderr: true}
+controller = do ->
 
-    # return reject err if !!err
+    promises = {}
+    retries = {}
 
-    # stream.pipe process.stdout
+    restart: (username) ->
+        delete promises[username]
+        retries[username] = (retries[username] ? 0) + 1
+        console.log "> retry #{retries[username]} #{username}"
+        if retries[username] > 2
+            rejectP Error "Maximum number of retries exhausted."
+        else 
+            @start username
 
+    start: (username) ->
 
-    # <- set-timeout _, 6000
-    # container.stop ->
-    #     console.log ...
-
-start-container-single = do ->
-
-    locked = {}
-
-    username <- id
-
-    if !!locked[username]
-        return locked[username]
-    else
-        p = start-container username
-        p
-            .then ->
-                <- set-timeout _, 500
-                delete locked[username]
-            .catch ->
-                <- set-timeout _, 500
-                delete locked[username]
-        p
+        if !!promises[username]
+            return promises[username]
+        else
+            p = start-container username
+            p
+                .then (result) ->
+                    promises[username] = returnP result
+                    delete retries[username]
+                .catch ->
+                    delete promises[username]
+            p
 
 
 
-module.exports = {
-    start-container-single
-}
+module.exports = controller
 return
 err, container <- to-callback (start-container-single "wow4")
 if err 

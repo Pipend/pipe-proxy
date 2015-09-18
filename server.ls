@@ -1,16 +1,5 @@
 {find, filter, map, minimum, any, concat-map, unique, id} = require \prelude-ls
 {bindP, from-error-value-callback, new-promise, returnP, rejectP, to-callback, with-cancel-and-dispose} = require \./async-ls
-{http-port} = require \./config
-
-http = require \http
-proxy = require \http-proxy .createProxyServer!
-
-proxy.on \error, (e) ->
-    console.log \error, e
-
-proxy.on \proxyReq (proxyReq, req, res, options) ->
-    proxyReq.set-header 'host', '192.168.99.100'
-
 {
     promises: {
         parallel-map, parallel-limited-filter, from-error-value-callback, bindP, returnP
@@ -20,11 +9,35 @@ proxy.on \proxyReq (proxyReq, req, res, options) ->
         filterM, liftM
     }
 } = require \async-ls
+http = require \http
+proxy = require \http-proxy .createProxyServer!
+controller = require \./control.ls
+{http-port} = require \./config
 
 
+proxy.on \error, (e, req, res) ->
+    console.log \error, e, e.code
+    username = req.cookies["username"]
+    if 'ECONNREFUSED' == e.code
+        do-proxy (controller.restart username), req, res
+    else
+        res.end e.to-string!
+
+proxy.on \proxyReq (proxyReq, req, res, options) ->
+    proxyReq.set-header 'host', '192.168.99.100'
 
 
-{start-container-single} = require \./control.ls
+# do-proxy :: Promise ContainerData -> Request -> Response -> ()
+do-proxy = (promise, req, res) ->
+    err, {state, container, container-info, port}? <- to-callback promise
+    if err 
+        console.log err
+        res.end err.to-string!
+    else
+        proxy.web do 
+            req
+            res
+            {target: "http://192.168.99.100:#{port}/"}
 
 express = require \express
 app = express!
@@ -44,28 +57,7 @@ app = express!
         if !username
             res.redirect "/login"
         else
-
-            err, {state, container, container-info, port}? <- to-callback (start-container-single username)
-            if err 
-                console.log err
-                res.end err.to-string!
-            else
-                console.log "STARTED", container-info, port
-
-                timeout = match state
-                    | "running" => 0
-                    | "created" => 18000
-                    | "started" => 12000
-
-                <- set-timeout _, timeout
-
-                console.log "prxying..."
-
-                proxy.web do 
-                    req
-                    res
-                    {target: "http://192.168.99.100:#{port}/"}
-            # next!
+            do-proxy (controller.start username), req, res
 
 app.listen http-port
 
